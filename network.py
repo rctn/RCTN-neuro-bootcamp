@@ -13,7 +13,7 @@ def calculate_L(D):
     try:
         L = 2 * sp.linalg.eigh(np.dot(D, D.T), eigvals_only=True, eigvals=(N_sp-1,N_sp-1))[0]
     except ValueError:
-        L = (2 * std ** 2 * N_sp) # Upper bound on largest eigenvalue
+        L = (2 * std ** 2 * D.shape[1]) # Upper bound on largest eigenvalue
                # std - standard deviation of the dictionary elements
     return L
 
