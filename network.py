@@ -2,14 +2,16 @@ import math
 
 import numpy as np
 import scipy as sp
+import functools
 
-def calculate_L(D):
+def calculate_l(D):
     """
     Calculates the 'L' constant for FISTA for the dictionary D
 
     Parameters
     D : array
     """
+    N_sp = D.shape[0]
     try:
         L = 2 * sp.linalg.eigh(np.dot(D, D.T), 
                                eigvals_only=True, 
@@ -18,7 +20,7 @@ def calculate_L(D):
         L = (2 * D.shape[1])
     return L
 
-def fista(cost, grad_A, A0, n_steps, l, print_costs = False):
+def fista(cost, grad_A, A0, n_g_steps, lamb, l, print_costs = False):
     """
     Computes FISTA Approximation
 
@@ -31,8 +33,8 @@ def fista(cost, grad_A, A0, n_steps, l, print_costs = False):
         and gives dE_reconstruction_error/dA
     A0 : matrix
         Initial value for sparse coefficents
-    n_steps : int
-        Number of iterations
+    n_g_steps : int
+        Number of gradient steps
     l : float
         Lipschitz constant for grad_A
     """
@@ -43,21 +45,22 @@ def fista(cost, grad_A, A0, n_steps, l, print_costs = False):
     Xs[0] = A0
     Ys[0] = A0
     Ts[0] = 1.
-    for i in range(n_steps-1):
+    for i in range(n_g_steps-1):
         i0 = i % 2
-        i1 = i % 2
+        i1 = (i+1) % 2
         A = Ys[i0]
-        Xs[i1] = ista(A, grad_A(A),  alpha, l)
+        Xs[i1] = ista(A, grad_A(A), lamb, l)
         Ts[i1] = 0.5 * (1. + np.sqrt(1. + 4. * Ts[i0] ** 2))
         Ys[i1] = Xs[i1] + (Ts[i0]-1)/ Ts[i1] * (Xs[i1]-Xs[i0])
-        E, E_rec, E_sp, SNR = cost(A)
-        if (i % (N_g_itr/10) == 0) and print_costs:
-            print E / N_bat, E_rec / N_bat, E_sp / N_bat, SNR
+        E = cost(A)
+        if (i % (n_g_steps/10) == 0) and print_costs:
+            print E
+    return Xs[(n_g_steps-1)%2]
 
-def ista(A, gradA, alpha, l):
+def ista(A, gradA, lamb, l):
     """
     Returns the new value of the sparse coefficients after one ista step
-        for the cost function f(A) + Alpha * |A|
+        for the cost function f(A) + lamb * |A|
     Parameters
     ----------
     A : array
@@ -69,15 +72,15 @@ def ista(A, gradA, alpha, l):
     l : float
         Lipschitz constant for dE_rec/dA
     """
-    theta = alpha / l
+    theta = lamb / l
     Ap = A - 1./l * gradA
     max = 1000000. #FIXME better function than clip?
     return np.sign(Ap) * np.clip(np.abs(Ap) - theta, 0., max)
 
 def row_normalize(D):
     # FIXME is this right?
-    norms = np.sqrt(np.diag((D**2).sum(0)))
-    D = D.dot(np.diag(1./norms))
+    norms = np.sqrt((D ** 2).sum(1, keepdims=True))
+    D = D * 1./norms
     return D
 
 class Network(object):
@@ -95,14 +98,15 @@ class Network(object):
     eta : float
         Dictionary learning rate.
     """
-    def __init__(self, n_dict, n_features, lamb=.1, eta=.01):
+    def __init__(self, n_dict, n_features, lamb=.1, eta=.01, batch_size = 100):
         self.n_dict = n_dict
-        self.n_feature = n_features
+        self.n_features = n_features
         self.lamb = lamb
         self.eta = eta
+        self.batch_size = batch_size
         self.activities = None # ??
         self.reset()
-        self.stale_A = True  # ??
+        self.stale_A = True
 
     def reset(self, n_dict=None, n_features=None):
         """
@@ -118,10 +122,10 @@ class Network(object):
         if n_features is None:
             n_features = self.n_features
         # Fix for positive only
-        self.D = normalize(np.random.randn((n_features,
-                                            n_dict)))
+        self.D = row_normalize(np.random.randn(n_dict,
+                                            n_features))
 
-    def infer_A(self, X, A=None, n_steps=150, track_cost=False):
+    def infer_A(self, X, A0=None, n_g_steps=150, track_cost=False):
         """
         Infer sparse coefficients, A.
 
@@ -129,20 +133,24 @@ class Network(object):
         ----------
         X : array
             A batch of input data.
-        n_steps : int
-            Number of steps for inference.
+        A0 : array
+            Starting values for A
+        n_g_steps : int
+            Number of gradient steps for inference.
         """
         self.stale_A = False
         self.X = X
+        if A0 is None:
+            A0 = np.zeros((self.batch_size, self.n_dict))
         cost = functools.partial(self.cost, X)
         grad = functools.partial(self.grad_A, X)
         l = calculate_l(self.D)
-        A0 = np.zeros_like(A)
-        A = fista(cost, grad_A, A0, n_steps, track_cost)
-        if isinstance(A, tuple):
-            self.A, cost = A #???
-        else:
-            self.A = A
+        A = fista(cost, grad, A0, n_g_steps, self.lamb, l, track_cost)
+        self.A = A
+#        if isinstance(A, tuple):
+#            self.A, cost = A #???
+#        else:
+#            self.A = A
         return A
 
     def grad_A(self, X, A):
@@ -189,7 +197,8 @@ class Network(object):
             X = self.X
         if A is None:
             A = self.A
-        self.D = normalize(D-self.eta*normalize(self.grad_D(X, A)))
+        self.D = row_normalize(D-self.eta*
+                               row_normalize(self.grad_D(X, A)))
         self.stale_A = True
 
     def train(self, data, batch_size=100, n_epochs=10, reset=True):
@@ -209,8 +218,8 @@ class Network(object):
         """
         if reset:
             self.reset()
-        batch_size = min(batch_size, X.shape[0])
-        n_batches = math.ceil(X.shape[0]/batch_size)
+        batch_size = min(batch_size, data.shape[0])
+        n_batches = math.ceil(data.shape[0]/batch_size)
         for ii in range(n_epochs):
             order = np.random.permutation(n_batches)
             for jj in order:
@@ -224,7 +233,7 @@ class Network(object):
             print("Cost:     "+str(self.cost(batch, A)))
             print()
 
-    def reconstruct(self, X, A=None):
+    def reconstruct(self, X, A):
         """
         Reconstruct the data from the learned model.
 
@@ -235,11 +244,11 @@ class Network(object):
         A : array  (optional)
             Sparse coefficients.
         """
-        if A is None:
-            A = self.infer_A(X)
+#        if A is None:
+#            A = self.infer_A(X)
         return A.dot(self.D)
 
-    def MSE(self, X, A=None):
+    def MSE(self, X, A):
         """
         One-half mean-squared error for reconstructed data.
 
@@ -250,7 +259,8 @@ class Network(object):
         A : array  (optional)
             Sparse coefficients.
         """
-        X_prime = self.reconstruct(X, A=A)
+        X_prime = self.reconstruct(X, A) 
+        # FIXME: reconstruct's infer_A causes a loop
         return .5*((X-X_prime)**2).mean(0).sum()
 
     def SNR(self, X, A=None):
@@ -268,23 +278,21 @@ class Network(object):
         error = X-X_prime
         return (X.var(0)/error.var(0)).mean()
 
-    def sparsity(self, X=None, A=None):
+    def sparsity(self, A=None):
         """
         Sparsity measure for coefficients.
 
         Parameters
         ----------
-        X : array (optional)
-            Input data.
         A : array (optional)
             Sparse coefficients.
         """
-        if A is None:
-            assert X is not None, 'Must provide A or X'
-            A = self.infer_A(X)
+#        if A is None:
+#            assert X is not None, 'Must provide A or X'
+#            A = self.infer_A(X)
         return self.lamb*np.absolute(A).mean(0).sum()
 
-    def cost(self, X, A=None):
+    def cost(self, X, A):
         """
         Sparse coding cost.
 
@@ -295,4 +303,4 @@ class Network(object):
         A : array  (optional)
             Sparse coefficients.
         """
-        return self.MSE(X, A=A)+self.sparsity(A)
+        return self.MSE(X, A)+self.sparsity(A)
