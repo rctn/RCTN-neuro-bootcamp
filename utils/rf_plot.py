@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 
 def show_fields(M, cmap = plt.cm.bwr, m = None, pos_only = False):
     """
@@ -10,7 +11,7 @@ def show_fields(M, cmap = plt.cm.bwr, m = None, pos_only = False):
     """
     N, N_pix = M.shape
     if (m == None):
-        m = int(np.sqrt(N - 0.01)) + 1
+        m = int(math.ceil(np.sqrt(N)))
     
     l = int(np.sqrt(N_pix)) # Linear dimension of the image
     
