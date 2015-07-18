@@ -84,8 +84,11 @@ def ista(A, gradA, lamb, l):
     Ap = A - 1./l * gradA
     return np.sign(Ap) * np.maximum(np.abs(Ap) - theta, 0.)
 
-def row_normalize(D):
+def row_pos_normalize(D):
     D = np.maximum(D, 0.)
+    return row_normalize(D)
+
+def row_normalize(D):
     norms = np.sqrt((D ** 2).sum(1, keepdims=True))
     D = D * 1./norms
     return D
@@ -204,12 +207,12 @@ class Network(object):
             X = self.X
         if A is None:
             A = self.A
-        self.D = row_normalize(self.D-self.eta*
+        self.D = row_pos_normalize(self.D-self.eta*
                                #row_normalize(self.grad_D(X, A)))
                                self.grad_D(X, A))
         self.stale_A = True
 
-    def train(self, data, batch_size=100, n_epochs=10, reset=True):
+    def train(self, data, batch_size=100, n_epochs=10, reset=True, rng=None):
         """
         Train a dictionary: D, on the data: X.
 
@@ -224,6 +227,8 @@ class Network(object):
         reset : boolean (optional)
             Reset dictionary before training.
         """
+        if rng is None:
+            rng = np.random
         if reset:
             self.reset()
         n_examples = data.shape[0]
@@ -238,14 +243,14 @@ class Network(object):
                 self.X = batch
                 A = self.infer_A(batch)
                 self.learn_D()
-            print("Epoch "+str(ii)+" of "+str(n_epochs))
+            print("Epoch "+str(ii+1)+" of "+str(n_epochs))
             print("MSE:      "+str(self.MSE(batch, A)))
             print("Sparsity: "+str(self.sparsity(A)))
             print("SNR:      "+str(self.SNR(batch, A)))
             print("Cost:     "+str(self.cost(batch, A)))
             print
 
-    def reconstruct(self, X, A):
+    def reconstruct(self, X=None, A=None):
         """
         Reconstruct the data from the learned model.
 
@@ -256,6 +261,8 @@ class Network(object):
         A : array  (optional)
             Sparse coefficients.
         """
+        if X is None:
+            X = self.X
         if A is None:
             A = self.infer_A(X)
         return A.dot(self.D)
