@@ -85,7 +85,7 @@ def ista(A, gradA, lamb, l):
     return np.sign(Ap) * np.maximum(np.abs(Ap) - theta, 0.)
 
 def row_pos_normalize(D):
-    D = np.maximum(D, 0.)
+    D = np.maximum(D, 1.e-4)
     return row_normalize(D)
 
 def row_normalize(D):
@@ -208,8 +208,8 @@ class Network(object):
         if A is None:
             A = self.A
         self.D = row_pos_normalize(self.D-self.eta*
-                               #row_normalize(self.grad_D(X, A)))
-                               self.grad_D(X, A))
+                               row_normalize(self.grad_D(X, A)))
+                               #self.grad_D(X, A))
         self.stale_A = True
 
     def train(self, data, batch_size=100, n_epochs=10, reset=True, rng=None):
