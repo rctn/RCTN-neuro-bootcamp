@@ -20,7 +20,8 @@ def calculate_l(D):
         L = (2 * D.shape[1])
     return L
 
-def fista(cost, grad_A, A0, n_g_steps, lamb, l, track_costs=False):
+def fista(cost, grad_A, A0, n_g_steps, lamb, l, 
+          track_costs=False, pos_only=True):
     """
     Computes FISTA Approximation
 
@@ -37,6 +38,9 @@ def fista(cost, grad_A, A0, n_g_steps, lamb, l, track_costs=False):
         Number of gradient steps
     l : float
         Lipschitz constant for grad_A
+    track_costs : bool
+    pos_only : bool
+        Positive only sparse coding
     """
     n_bat, n_sp = A0.shape
     Xs = np.zeros((2, n_bat, n_sp))
@@ -51,7 +55,7 @@ def fista(cost, grad_A, A0, n_g_steps, lamb, l, track_costs=False):
         i0 = i % 2
         i1 = (i+1) % 2
         A = Ys[i0]
-        Xs[i1] = ista(A, grad_A(A), lamb, l)
+        Xs[i1] = ista(A, grad_A(A), lamb, l, pos_only)
         Ts[i1] = 0.5 * (1. + np.sqrt(1. + 4. * Ts[i0] ** 2))
         Ys[i1] = Xs[i1] + (Ts[i0]-1)/ Ts[i1] * (Xs[i1]-Xs[i0])
         E = cost(A)
@@ -65,7 +69,7 @@ def fista(cost, grad_A, A0, n_g_steps, lamb, l, track_costs=False):
         rval = Xs[(n_g_steps-1)%2] 
     return rval
 
-def ista(A, gradA, lamb, l):
+def ista(A, gradA, lamb, l, pos_only=True):
     """
     Returns the new value of the sparse coefficients after one ista step
         for the cost function f(A) + lamb * |A|
@@ -79,17 +83,22 @@ def ista(A, gradA, lamb, l):
         Parameter for regularization term
     l : float
         Lipschitz constant for dE_rec/dA
+    pos_only : bool
+        Positive only sparse coding
     """
     theta = lamb / l
     Ap = A - 1./l * gradA
-    return np.sign(Ap) * np.maximum(np.abs(Ap) - theta, 0.)
+    tAp = np.sign(Ap) * np.maximum(np.abs(Ap) - theta, 0.)
+    if pos_only:
+        tAp = np.maximum(tAp, 0.)
+    return tAp
 
 def row_pos_normalize(D):
     D = np.maximum(D, 1.e-4)
     return row_normalize(D)
 
 def row_normalize(D):
-    norms = np.sqrt((D ** 2).sum(1, keepdims=True))
+    norms = np.max(np.sqrt((D ** 2).sum(1, keepdims=True)), 0.0001)
     D = D * 1./norms
     return D
 
@@ -114,7 +123,6 @@ class Network(object):
         self.lamb = lamb
         self.eta = eta
         self.batch_size = batch_size
-        self.activities = None # ??
         self.reset()
         self.stale_A = True
 
@@ -132,10 +140,11 @@ class Network(object):
         if n_features is None:
             n_features = self.n_features
         # Fix for positive only
-        self.D = row_normalize(np.random.randn(n_dict,
+        self.D = row_normalize(np.random.rand(n_dict,
                                             n_features))
 
-    def infer_A(self, X, A0=None, n_g_steps=40, track_cost=False):
+    def infer_A(self, X, A0=None, n_g_steps=40, 
+                track_cost=False, pos_only=True):
         """
         Infer sparse coefficients, A.
 
@@ -147,6 +156,8 @@ class Network(object):
             Starting values for A
         n_g_steps : int
             Number of gradient steps for inference.
+        track_cost : bool
+            True if we track cost, then return from fista is a tuple
         """
         self.stale_A = False
         self.X = X
@@ -155,8 +166,8 @@ class Network(object):
         cost = functools.partial(self.cost, X)
         grad = functools.partial(self.grad_A, X)
         l = calculate_l(self.D)
-        A = fista(cost, grad, A0, n_g_steps, self.lamb, l, track_cost)
-        self.A = A
+        A = fista(cost, grad, A0, n_g_steps, self.lamb, l, 
+                  track_cost, pos_only)
         if isinstance(A, tuple):
             self.A, cost = A
         else:
@@ -212,7 +223,8 @@ class Network(object):
                                #self.grad_D(X, A))
         self.stale_A = True
 
-    def train(self, data, batch_size=100, n_epochs=10, reset=True, rng=None):
+    def train(self, data, batch_size=100, n_epochs=10, 
+              reset=True, rng=None, pos_only=True):
         """
         Train a dictionary: D, on the data: X.
 
@@ -241,7 +253,7 @@ class Network(object):
             for jj in order:
                 batch = data[jj*batch_size:min((jj+1)*batch_size, n_examples)]
                 self.X = batch
-                A = self.infer_A(batch)
+                A = self.infer_A(batch, pos_only=pos_only)
                 self.learn_D()
             print("Epoch "+str(ii+1)+" of "+str(n_epochs))
             print("MSE:      "+str(self.MSE(batch, A)))
