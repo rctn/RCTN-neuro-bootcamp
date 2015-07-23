@@ -94,12 +94,12 @@ def ista(A, gradA, lamb, l, pos_only=True):
     return tAp
 
 def row_pos_normalize(D):
-    D = np.maximum(D, 0.000001)
+    D = np.maximum(D, 1.e-6)
     return row_normalize(D)
 
 def row_normalize(D):
     norms = np.maximum(np.sqrt((D ** 2).sum(1, keepdims=True)), 
-                       0.0000001)
+                       1.e-6)
     D = D * 1./norms
     return D
 
@@ -121,12 +121,12 @@ class Network(object):
         True if we want all dictionary elements and coefficients to be
         positive numbers
     """
-    def __init__(self, n_dict, n_features, lamb=.1, eta=.01, 
+    def __init__(self, n_dict, n_features, lamb=.5, eta=.05, 
                  batch_size = 100, pos_only = True):
         self.n_dict = n_dict
         self.n_features = n_features
         self.lamb = lamb
-#        self.eta = eta
+        self.eta = eta
         self.batch_size = batch_size
         self.pos_only = pos_only
         self.reset()
@@ -141,12 +141,9 @@ class Network(object):
         n_dict : int (optional)
         n_features : int (optional)
         """
-        if n_dict is None:
-            n_dict = self.n_dict
-        if n_features is None:
-            n_features = self.n_features
-        # Fix for positive only
-        self.D = row_normalize(np.random.rand(n_dict,
+        n_dict = n_dict or self.n_dict
+        n_features = n_features or self.n_features
+        self.D = row_pos_normalize(np.random.rand(n_dict,
                                             n_features))
 
     def infer_A(self, X, A0=None, n_g_steps=40, track_cost=False):
@@ -166,8 +163,7 @@ class Network(object):
         """
         self.stale_A = False
         self.X = X
-        if A0 is None:
-            A0 = np.zeros((self.batch_size, self.n_dict))
+        A0 = A0 or np.zeros((X.shape[0], self.n_dict))
         cost = functools.partial(self.cost, X)
         grad = functools.partial(self.grad_A, X)
         l = calculate_l(self.D)
@@ -230,8 +226,8 @@ class Network(object):
                                #self.grad_D(X, A))
         self.stale_A = True
 
-    def train(self, data, batch_size=100, n_epochs=10, eta = 0.05,
-              reset=True, rng=None):
+    def train(self, data, batch_size=100, n_epochs=10, eta=None,
+              lamb=None, reset=True, rng=None):
         """
         Train a dictionary: D, on the data: X.
 
@@ -248,8 +244,9 @@ class Network(object):
         reset : boolean (optional)
             Reset dictionary before training.
         """
-        if rng is None:
-            rng = np.random
+        rng = rng or np.random
+        lamb = lamb or self.lamb
+        eta = eta or self.eta
         if reset:
             self.reset()
         n_examples = data.shape[0]
