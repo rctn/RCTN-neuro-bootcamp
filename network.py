@@ -94,11 +94,12 @@ def ista(A, gradA, lamb, l, pos_only=True):
     return tAp
 
 def row_pos_normalize(D):
-    D = np.maximum(D, 1.e-4)
+    D = np.maximum(D, 0.000001)
     return row_normalize(D)
 
 def row_normalize(D):
-    norms = np.max(np.sqrt((D ** 2).sum(1, keepdims=True)), 0.0001)
+    norms = np.maximum(np.sqrt((D ** 2).sum(1, keepdims=True)), 
+                       0.0000001)
     D = D * 1./norms
     return D
 
@@ -116,13 +117,18 @@ class Network(object):
         Sparsity coefficient.
     eta : float
         Dictionary learning rate.
+    pos_only : bool
+        True if we want all dictionary elements and coefficients to be
+        positive numbers
     """
-    def __init__(self, n_dict, n_features, lamb=.1, eta=.01, batch_size = 100):
+    def __init__(self, n_dict, n_features, lamb=.1, eta=.01, 
+                 batch_size = 100, pos_only = True):
         self.n_dict = n_dict
         self.n_features = n_features
         self.lamb = lamb
-        self.eta = eta
+#        self.eta = eta
         self.batch_size = batch_size
+        self.pos_only = pos_only
         self.reset()
         self.stale_A = True
 
@@ -143,8 +149,7 @@ class Network(object):
         self.D = row_normalize(np.random.rand(n_dict,
                                             n_features))
 
-    def infer_A(self, X, A0=None, n_g_steps=40, 
-                track_cost=False, pos_only=True):
+    def infer_A(self, X, A0=None, n_g_steps=40, track_cost=False):
         """
         Infer sparse coefficients, A.
 
@@ -167,7 +172,7 @@ class Network(object):
         grad = functools.partial(self.grad_A, X)
         l = calculate_l(self.D)
         A = fista(cost, grad, A0, n_g_steps, self.lamb, l, 
-                  track_cost, pos_only)
+                  track_cost, self.pos_only)
         if isinstance(A, tuple):
             self.A, cost = A
         else:
@@ -200,7 +205,7 @@ class Network(object):
         """
         return -(A.T).dot(X-A.dot(self.D))
 
-    def learn_D(self, X=None, A=None):
+    def learn_D(self, X=None, A=None, eta = 0.01):
         """
         Run one step of dictionary learning on D.
 
@@ -210,6 +215,8 @@ class Network(object):
             Input data.
         A : array  (optional)
             Sparse coefficients.
+        eta : double
+            Learning rate for the dictionary
         """
         if self.stale_A and A is None:
             raise AttributeError("Coefficients: A, are old. "+
@@ -218,13 +225,13 @@ class Network(object):
             X = self.X
         if A is None:
             A = self.A
-        self.D = row_pos_normalize(self.D-self.eta*
+        self.D = row_pos_normalize(self.D-eta*
                                row_normalize(self.grad_D(X, A)))
                                #self.grad_D(X, A))
         self.stale_A = True
 
-    def train(self, data, batch_size=100, n_epochs=10, 
-              reset=True, rng=None, pos_only=True):
+    def train(self, data, batch_size=100, n_epochs=10, eta = 0.05,
+              reset=True, rng=None):
         """
         Train a dictionary: D, on the data: X.
 
@@ -236,6 +243,8 @@ class Network(object):
             Batch size for training.
         n_epochs : int (optional)
             Number of passes through dataset (epochs)
+        eta : double
+            Step size for dictionary learning
         reset : boolean (optional)
             Reset dictionary before training.
         """
@@ -253,8 +262,8 @@ class Network(object):
             for jj in order:
                 batch = data[jj*batch_size:min((jj+1)*batch_size, n_examples)]
                 self.X = batch
-                A = self.infer_A(batch, pos_only=pos_only)
-                self.learn_D()
+                A = self.infer_A(batch)
+                self.learn_D(eta=eta)
             print("Epoch "+str(ii+1)+" of "+str(n_epochs))
             print("MSE:      "+str(self.MSE(batch, A)))
             print("Sparsity: "+str(self.sparsity(A)))

@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import math
 
-def show_fields(M, cmap = plt.cm.bwr, m = None, pos_only = False):
+def show_fields(M, cmap = 'gray', m = None, pos_only = False):
     """
     M - dictionary with dict elements as rows (each row is an unraveled image)
     cmap - color map for plot
