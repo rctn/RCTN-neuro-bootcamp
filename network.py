@@ -13,14 +13,14 @@ def calculate_l(D):
     """
     N_sp = D.shape[0]
     try:
-        L = 2 * sp.linalg.eigh(np.dot(D, D.T), 
-                               eigvals_only=True, 
+        L = 2 * sp.linalg.eigh(np.dot(D, D.T),
+                               eigvals_only=True,
                                eigvals=(N_sp-1,N_sp-1))[0]
     except ValueError:
         L = (2 * D.shape[1])
     return L
 
-def fista(cost, grad_A, A0, n_g_steps, lamb, l, 
+def fista(cost, grad_A, A0, n_g_steps, lamb, l,
           track_costs=False, pos_only=True):
     """
     Computes FISTA Approximation
@@ -30,7 +30,7 @@ def fista(cost, grad_A, A0, n_g_steps, lamb, l,
     cost : function handle
         Function handle that gives the cost given the sparse coefficients, A
     grad_A: function handle
-        Function that takes in the sparse coefficients 
+        Function that takes in the sparse coefficients
         and gives dE_reconstruction_error/dA
     A0 : matrix
         Initial value for sparse coefficents
@@ -66,7 +66,7 @@ def fista(cost, grad_A, A0, n_g_steps, lamb, l,
     if track_costs:
         rval = (Xs[(n_g_steps-1)%2], costs)
     else:
-        rval = Xs[(n_g_steps-1)%2] 
+        rval = Xs[(n_g_steps-1)%2]
     return rval
 
 def ista(A, gradA, lamb, l, pos_only=True):
@@ -98,7 +98,7 @@ def row_pos_normalize(D):
     return row_normalize(D)
 
 def row_normalize(D):
-    norms = np.maximum(np.sqrt((D ** 2).sum(1, keepdims=True)), 
+    norms = np.maximum(np.sqrt((D ** 2).sum(1, keepdims=True)),
                        1.e-6)
     D = D * 1./norms
     return D
@@ -121,7 +121,7 @@ class Network(object):
         True if we want all dictionary elements and coefficients to be
         positive numbers
     """
-    def __init__(self, n_dict, n_features, lamb=.5, eta=.05, 
+    def __init__(self, n_dict, n_features, lamb=.5, eta=.05,
                  batch_size = 100, pos_only = True):
         self.n_dict = n_dict
         self.n_features = n_features
@@ -167,7 +167,7 @@ class Network(object):
         cost = functools.partial(self.cost, X)
         grad = functools.partial(self.grad_A, X)
         l = calculate_l(self.D)
-        A = fista(cost, grad, A0, n_g_steps, self.lamb, l, 
+        A = fista(cost, grad, A0, n_g_steps, self.lamb, l,
                   track_cost, self.pos_only)
         if isinstance(A, tuple):
             self.A, cost = A
@@ -183,7 +183,7 @@ class Network(object):
         ----------
         X : array
             A batch of input data.
-        A : array 
+        A : array
             Sparse coefficients.
         """
         return -(X-A.dot(self.D)).dot(self.D.T)
@@ -196,7 +196,7 @@ class Network(object):
         ----------
         X : array
             Input data.
-        A : array 
+        A : array
             Sparse coefficients.
         """
         return -(A.T).dot(X-A.dot(self.D))
@@ -226,7 +226,7 @@ class Network(object):
                                #self.grad_D(X, A))
         self.stale_A = True
 
-    def train(self, data, batch_size=100, n_epochs=10, eta=None,
+    def train(self, data, batch_size=100, n_batches=100, eta=None,
               lamb=None, reset=True, rng=None):
         """
         Train a dictionary: D, on the data: X.
@@ -237,36 +237,44 @@ class Network(object):
             Input data. (n_examples, n_features)
         batch_size : int  (optional)
             Batch size for training.
-        n_epochs : int (optional)
-            Number of passes through dataset (epochs)
+        n_batches : int (optional)
+            Number of batches of image patches to process
         eta : double
             Step size for dictionary learning
         reset : boolean (optional)
             Reset dictionary before training.
+        -----------
+        Returns the history of the MSE, Sparsity, SNR, and cost per batch during
+        the training session
         """
         rng = rng or np.random
         lamb = lamb or self.lamb
         eta = eta or self.eta
+
         if reset:
             self.reset()
+
         n_examples = data.shape[0]
+
         if len(data.shape) > 2:
             data = data.reshape(n_examples, -1)
         batch_size = min(batch_size, n_examples)
-        n_batches = int(math.ceil(n_examples/batch_size))
-        for ii in range(n_epochs):
-            order = np.random.permutation(n_batches)
-            for jj in order:
-                batch = data[jj*batch_size:min((jj+1)*batch_size, n_examples)]
-                self.X = batch
-                A = self.infer_A(batch)
-                self.learn_D(eta=eta)
-            print("Epoch "+str(ii+1)+" of "+str(n_epochs))
-            print("MSE:      "+str(self.MSE(batch, A)))
-            print("Sparsity: "+str(self.sparsity(A)))
-            print("SNR:      "+str(self.SNR(batch, A)))
-            print("Cost:     "+str(self.cost(batch, A)))
-            print
+
+        MSE_hist, Sparsity_hist, SNR_hist, Cost_hist = [np.zeros([n_batches])]*4
+
+        for ii in range(n_batches):
+            batch = data[np.random.randint(0, n_examples, batch_size), :]
+            self.X = batch
+            A = self.infer_A(batch)
+            self.learn_D(eta=eta)
+
+            MSE_hist[ii] = self.MSE(batch, A)
+            Sparsity_hist[ii] = self.sparsity(A)
+            SNR_hist[ii] = self.SNR(batch, A)
+            Cost_hist[ii] = self.cost(batch, A)
+
+
+        return (MSE_hist, Sparsity_hist, SNR_hist, Cost_hist)
 
     def reconstruct(self, X=None, A=None):
         """
@@ -296,7 +304,7 @@ class Network(object):
         A : array  (optional)
             Sparse coefficients.
         """
-        X_prime = self.reconstruct(X, A) 
+        X_prime = self.reconstruct(X, A)
         return .5*((X-X_prime)**2).mean(0).sum()
 
     def SNR(self, X, A=None):
