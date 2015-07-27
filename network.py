@@ -260,7 +260,7 @@ class Network(object):
             data = data.reshape(n_examples, -1)
         batch_size = min(batch_size, n_examples)
 
-        MSE_hist, Sparsity_hist, SNR_hist, Cost_hist = [np.zeros([n_batches])]*4
+        MSE_hist, Sparsity_hist, SNR_hist, Cost_hist = (np.zeros([n_batches]) for i in range(4))
 
         for ii in range(n_batches):
             batch = data[np.random.randint(0, n_examples, batch_size), :]
