@@ -1,3 +1,4 @@
+from __future__ import division
 import numpy as np
 import matplotlib.pyplot as plt
 import math
@@ -20,7 +21,7 @@ def show_fields(M, cmap = 'gray', m = None, pos_only = False):
     out = np.zeros(((l + 1) * m, (l + 1) * m)) + np.max(M)
 
     for u in range(N):
-        i = u / m
+        i = u // m
         j = u % m
         out[(i * (l + 1)):(i * (l + 1) + l), (j * (l + 1)):(j * (l + 1) + l)] = np.reshape(M[u], (l, l))
         

@@ -1,5 +1,5 @@
+from __future__ import division
 import math
-
 import numpy as np
 import scipy as sp
 import functools
@@ -61,8 +61,8 @@ def fista(cost, grad_A, A0, n_g_steps, lamb, l,
         E = cost(A)
         if track_costs:
             costs[i] = E
-        if (i % (n_g_steps/10) == 0) and track_costs:
-            print E
+        if (i % (n_g_steps//10) == 0) and track_costs:
+            print(E)
     if track_costs:
         rval = (Xs[(n_g_steps-1)%2], costs)
     else:
@@ -221,9 +221,13 @@ class Network(object):
             X = self.X
         if A is None:
             A = self.A
-        self.D = row_pos_normalize(self.D-eta*
+        if self.pos_only:
+            self.D = row_pos_normalize(self.D-eta*
                                row_normalize(self.grad_D(X, A)))
-                               #self.grad_D(X, A))
+                               #self.grad_D(X, A)
+        else:
+            self.D=row_normalize(self.D-eta*
+                               row_normalize(self.grad_D(X, A)))
         self.stale_A = True
 
     def train(self, data, batch_size=100, n_batches=100, eta=None,
