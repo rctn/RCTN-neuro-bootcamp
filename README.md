@@ -6,9 +6,9 @@ Sparse coding is both a fundamental principle for understanding sensory processi
 
 What is in the tutorial?
 
-The focus of this tutorial is to introduce the audience to a simple example of sparse coding. 
+Generally, sparse coding is a method to find the underlying factors that generate our data. There are two concrete examples in this tutorial:
 
-Sparse coding allows us to decompose handwritten digits into their generative components, which are pen strokes. Next, you will see how the properties of the cells in the human visual cortex are predicted by sparse coding of natural images. 
+First, sparse coding allows us to decompose handwritten digits into their generative components, which are pen strokes. Second, you will see how the properties of the cells in the human visual cortex are predicted by sparse coding of natural images. 
 
 
 Installation:
